@@ -133,28 +133,21 @@ def retrieve_relevant_docs(question: str, expenses: List[Dict[str, Any]], top_k:
     return [doc for _, doc in scored[:top_k]]
 
 
-def build_prompt(question: str, docs: List[Dict[str, str]]) -> str:
+def build_prompt(question_with_history: str, docs: List[Dict[str, str]]) -> str:
     context = "\n\n".join([f"[{doc['ref']}]\n{doc['text']}" for doc in docs])
 
     return f"""
 너는 개인 가계부 소비 분석 도우미다.
-반드시 아래 참고 문서만 근거로 답변해라.
-문서에 없는 내용은 추측하지 말고 "문서에서 확인되지 않습니다."라고 답해라.
-답변은 한국어로 작성하라.
-가능하면 날짜, 금액, 카테고리, 사용처를 구체적으로 언급하라.
+반드시 아래 제공된 [참고 문서]와 [이전 대화 맥락]을 근거로 답변해라. # 수정됨
+문서나 대화 기록에 없는 내용은 추측하지 말고 "확인되지 않습니다."라고 답해라.
 
-[질문]
-{question}
+[질문 및 맥락]
+{question_with_history}
 
 [참고 문서]
 {context}
-
-[답변 형식]
-1. 먼저 질문에 직접 답변
-2. 필요한 경우 핵심 근거 요약
-3. 마지막에 "참고:" 아래에 사용한 ref 나열
+...
 """.strip()
-
 
 def call_gemini(prompt: str) -> str:
     if not GEMINI_API_KEY:
@@ -203,10 +196,17 @@ def call_gemini(prompt: str) -> str:
     return "응답을 생성하지 못했습니다."
 
 
-def answer_question(question: str) -> Dict[str, Any]:
+# 수정 후 (이 코드로 덮어쓰세요)
+def answer_question(question: str, user_id: str = "default_user") -> Dict[str, Any]:
     expenses = load_expenses()
     docs = retrieve_relevant_docs(question, expenses, top_k=4)
-    prompt = build_prompt(question, docs)
+    
+    # 1. 이전 대화 맥락 가져오기
+    history_context = get_recent_context(user_id) 
+    
+    # 2. 질문에 이전 맥락을 합쳐서 프롬프트 생성
+    prompt = build_prompt(question + history_context, docs) 
+    
     answer = call_gemini(prompt)
 
     return {

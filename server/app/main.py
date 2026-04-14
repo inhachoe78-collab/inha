@@ -122,10 +122,11 @@ def delete_expense(expense_id: str):
     return {"message": "deleted"}
 
 
+# main.py의 ask 함수 수정
 @app.post("/ask", response_model=AskResponse)
 async def ask(request: AskRequest, background_tasks: BackgroundTasks):
-    # 1. AI 응답 생성 (기존 로직 수행)
-    answer_data = answer_question(request.question)
+    # user_id인 "default_user"를 함께 넘겨줘야 이전 대화를 찾아옵니다.
+    answer_data = answer_question(request.question, user_id="default_user")
     
     # 2. 채팅 로그 저장 (BackgroundTasks 활용하여 응답 속도 최적화)
     # 현재는 테스트를 위해 'default_user'로 설정하지만, 
