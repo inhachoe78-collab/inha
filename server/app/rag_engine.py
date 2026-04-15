@@ -194,3 +194,22 @@ def answer_question(uid: str, question: str) -> Dict[str, Any]:
         "generation_seconds": round(generation_elapsed, 3),
         "total_seconds": round(retrieval_elapsed + generation_elapsed, 3),
     }
+
+def build_expense_rag_record(expense_data: dict) -> dict:
+    """
+    지출 내역 데이터를 받아 RAG 시스템에 필요한 
+    텍스트 요약(rag_text)과 임베딩(embedding)을 포함한 레코드를 생성합니다.
+    """
+    # 1. 지출 데이터를 문장으로 변환
+    text = expense_to_sentence(expense_data)
+    
+    # 2. 문장을 벡터(Embedding)로 변환
+    embedding = call_embed_api(text)
+    
+    # 3. 기존 데이터에 RAG용 정보 추가해서 반환
+    record = expense_data.copy()
+    record["rag_text"] = text
+    record["embedding"] = embedding
+    record["updated_at"] = datetime.utcnow().isoformat()
+    
+    return record
