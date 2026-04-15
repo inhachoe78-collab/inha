@@ -1,11 +1,12 @@
 from datetime import datetime
 from typing import List, Dict, Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException # Depends 추가
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
-from google.cloud import firestore  # 채팅 저장을 위해 필수
+from google.cloud import firestore
 
+from app.auth import verify_firebase_token # 인증 함수 임포트
 from app.firebase_client import get_firestore_client
 from app.rag_engine import answer_question, build_expense_rag_record
 
@@ -22,7 +23,7 @@ app.add_middleware(
 
 db = get_firestore_client()
 
-# --- Pydantic 모델 정의 ---
+# --- Pydantic 모델 정의 (생략 없음) ---
 class ExpenseIn(BaseModel):
     date: str
     category: str
@@ -44,47 +45,39 @@ class AskResponse(BaseModel):
     generation_seconds: float
     total_seconds: float
 
-# --- API 엔드포인트 ---
+# --- API 엔드포인트 (인증 적용) ---
 
 @app.get("/")
 def root():
     return {"message": "HouseHold RAG server is running"}
 
-@app.get("/health")
-def health():
-    return {"status": "ok"}
-
-# 1. 지출 내역 가져오기
 @app.get("/expenses", response_model=List[Expense])
-def get_expenses():
-    uid = "default_user"
+def get_expenses(uid: str = Depends(verify_firebase_token)):
+    """로그인한 유저(uid)의 지출 내역만 가져옵니다."""
     docs = db.collection("users").document(uid).collection("expenses").stream()
     expenses = []
     for doc in docs:
         expenses.append({"id": doc.id, **doc.to_dict()})
     return expenses
 
-# 2. 지출 내역 생성 (RAG 임베딩 포함)
 @app.post("/expenses", response_model=Expense)
-def create_expense(expense_in: ExpenseIn):
-    uid = "default_user"
+def create_expense(expense_in: ExpenseIn, uid: str = Depends(verify_firebase_token)):
+    """로그인한 유저(uid)의 경로에 지출 내역을 생성합니다."""
     try:
         doc_ref = db.collection("users").document(uid).collection("expenses").document()
         record = build_expense_rag_record(expense_in.model_dump())
         doc_ref.set(record)
         return {"id": doc_ref.id, **expense_in.model_dump()}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"지출 생성 실패: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
 
-# 3. 질문하기 및 채팅 세션 유저별 저장 (목표 항목 3)
 @app.post("/ask", response_model=AskResponse)
-async def ask(request: AskRequest):
-    uid = "default_user" # 유저별 구분 저장
+async def ask(request: AskRequest, uid: str = Depends(verify_firebase_token)):
+    """로그인한 유저(uid)의 데이터를 기반으로 질문하고 기록을 저장합니다."""
     try:
-        # RAG 답변 생성
         result = answer_question(uid=uid, question=request.question)
         
-        # Firestore에 채팅 로그 저장
+        # 채팅 로그 저장 (유저별 세션 구분)
         chat_ref = db.collection("chat_sessions").document(uid)
         new_message = {
             "user": request.question,
@@ -94,10 +87,7 @@ async def ask(request: AskRequest):
         
         doc = chat_ref.get()
         if not doc.exists:
-            chat_ref.set({
-                "messages": [new_message],
-                "last_updated": datetime.utcnow().isoformat()
-            })
+            chat_ref.set({"messages": [new_message], "last_updated": datetime.utcnow().isoformat()})
         else:
             chat_ref.update({
                 "messages": firestore.ArrayUnion([new_message]),
@@ -108,10 +98,9 @@ async def ask(request: AskRequest):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
-# 4. 지출 내역 삭제
 @app.delete("/expenses/{expense_id}")
-def delete_expense(expense_id: str):
-    uid = "default_user"
+def delete_expense(expense_id: str, uid: str = Depends(verify_firebase_token)):
+    """본인의 지출 내역만 삭제 가능합니다."""
     doc_ref = db.collection("users").document(uid).collection("expenses").document(expense_id)
     if not doc_ref.get().exists:
         raise HTTPException(status_code=404, detail="해당 내역을 찾을 수 없습니다.")
