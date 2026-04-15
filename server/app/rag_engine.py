@@ -11,7 +11,7 @@ db = get_firestore_client()
 expenses_ref = db.collection("expenses")
 
 GEMINI_API_KEY = __import__("os").environ.get("GEMINI_API_KEY", "")
-GENERATION_MODEL = "gemini-2.5-flash"
+GENERATION_MODEL = "gemini-1.5-flash"
 GENERATE_URL = (
     f"https://generativelanguage.googleapis.com/v1beta/models/"
     f"{GENERATION_MODEL}:generateContent"
