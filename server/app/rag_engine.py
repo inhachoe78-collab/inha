@@ -11,11 +11,11 @@ db = get_firestore_client()
 expenses_ref = db.collection("expenses")
 
 GEMINI_API_KEY = __import__("os").environ.get("GEMINI_API_KEY", "")
+# rag_engine.py 상단 수정
 GENERATION_MODEL = "gemini-1.5-flash"
-GENERATE_URL = (
-    f"https://generativelanguage.googleapis.com/v1beta/models/"
-    f"{GENERATION_MODEL}:generateContent"
-)
+
+# v1beta 뒤에 models가 아니라 'models' 경로를 포함한 정확한 전체 주소입니다.
+GENERATE_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GENERATION_MODEL}:generateContent"
 
 
 def load_expenses() -> List[Dict[str, Any]]:
