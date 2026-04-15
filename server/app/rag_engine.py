@@ -68,39 +68,27 @@ def retrieve_relevant_docs(question: str, expenses: List[Dict[str, Any]], top_k:
     return [doc for _, doc in scored[:top_k]]
 
 def call_gemini(prompt: str) -> str:
-    # Render 환경 변수 체크
     api_key = os.environ.get("GEMINI_API_KEY", "").strip()
     if not api_key:
-        return "CONFIG_ERROR: Render 환경변수에 GEMINI_API_KEY가 없습니다."
+        return "CONFIG_ERROR: API KEY MISSING"
 
-    # 🔥 핵심 수정: 에러 메시지의 권고에 따라 v1beta -> v1 으로 변경
-    url = f"https://generativelanguage.googleapis.com/v1/models/{GENERATION_MODEL}:generateContent"
+    # 구글 API는 모델명 앞에 'models/'가 필수입니다. 
+    # 하지만 현재 주소 구조상 중복되었을 가능성이 있으니 아래처럼 완전한 경로로 고정합니다.
+    url = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
     
     params = {"key": api_key}
     headers = {"Content-Type": "application/json"}
-    payload = {
-        "contents": [{"parts": [{"text": prompt}]}]
-    }
+    payload = {"contents": [{"parts": [{"text": prompt}]}]}
 
     try:
-        response = requests.post(
-            url, 
-            params=params, 
-            headers=headers, 
-            json=payload, 
-            timeout=30
-        )
+        response = requests.post(url, params=params, headers=headers, json=payload, timeout=30)
         
         if response.status_code != 200:
-            # 여기서 404가 또 뜨면 모델명이 아예 틀렸거나 리전 문제입니다.
+            # 여전히 에러가 나면, 모델명을 'gemini-pro'로 바꿔서 테스트해봐야 합니다.
             return f"API_HTTP_ERROR_{response.status_code}: {response.text}"
 
         data = response.json()
-        candidates = data.get("candidates", [])
-        if not candidates:
-            return "API_EMPTY_RESPONSE: 답변 후보가 없습니다."
-
-        return candidates[0]["content"]["parts"][0]["text"].strip()
+        return data['candidates'][0]['content']['parts'][0]['text'].strip()
 
     except Exception as e:
         return f"SYSTEM_EXCEPTION: {str(e)}"
