@@ -16,7 +16,8 @@ GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 # rag_engine.py 상단 수정
 GENERATION_MODEL = "gemini-1.5-flash"
 
-# 이 주소가 구글 API의 표준 형식입니다. 
+# 이 주소 형식이 가장 표준적인 형태입니다. 
+# v1beta/models/{모델명}:generateContent 구조를 정확히 지켜야 합니다.
 GENERATE_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GENERATION_MODEL}:generateContent"
 
 def load_expenses() -> List[Dict[str, Any]]:
