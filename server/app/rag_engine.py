@@ -13,8 +13,10 @@ expenses_ref = db.collection("expenses")
 
 # Gemini 설정
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+# rag_engine.py 상단 수정
 GENERATION_MODEL = "gemini-1.5-flash"
-# 구글 표준 엔드포인트 형식으로 수정
+
+# 이 주소가 구글 API의 표준 형식입니다. 
 GENERATE_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GENERATION_MODEL}:generateContent"
 
 def load_expenses() -> List[Dict[str, Any]]:
