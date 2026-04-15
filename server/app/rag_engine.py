@@ -11,7 +11,7 @@ from app.firebase_client import get_firestore_client
 db = get_firestore_client()
 expenses_ref = db.collection("expenses")
 
-# 1. 모델 설정 (변동 가능성을 위해 상단에 배치)
+# 1. 모델 설정 (v1 정식 버전 주소 체계에 맞게 고정)
 GENERATION_MODEL = "gemini-1.5-flash"
 
 def load_expenses() -> List[Dict[str, Any]]:
@@ -68,28 +68,21 @@ def retrieve_relevant_docs(question: str, expenses: List[Dict[str, Any]], top_k:
     return [doc for _, doc in scored[:top_k]]
 
 def call_gemini(prompt: str) -> str:
-    """FastAPI 담당자를 위한 강화된 API 호출 함수"""
-    
     # Render 환경 변수 체크
     api_key = os.environ.get("GEMINI_API_KEY", "").strip()
     if not api_key:
         return "CONFIG_ERROR: Render 환경변수에 GEMINI_API_KEY가 없습니다."
 
-    # 404를 방지하는 가장 안전한 엔드포인트 구성 (쿼리 파라미터 방식)
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/{GENERATION_MODEL}:generateContent"
+    # 🔥 핵심 수정: 에러 메시지의 권고에 따라 v1beta -> v1 으로 변경
+    url = f"https://generativelanguage.googleapis.com/v1/models/{GENERATION_MODEL}:generateContent"
+    
     params = {"key": api_key}
     headers = {"Content-Type": "application/json"}
     payload = {
-        "contents": [{"parts": [{"text": prompt}]}],
-        "generationConfig": {
-            "temperature": 0.7,
-            "topP": 0.8,
-            "topK": 40
-        }
+        "contents": [{"parts": [{"text": prompt}]}]
     }
 
     try:
-        # FastAPI 서버의 가용성을 위해 timeout 설정 (30초)
         response = requests.post(
             url, 
             params=params, 
@@ -98,21 +91,17 @@ def call_gemini(prompt: str) -> str:
             timeout=30
         )
         
-        # HTTP 에러 발생 시 상세 응답 메시지 포함
         if response.status_code != 200:
+            # 여기서 404가 또 뜨면 모델명이 아예 틀렸거나 리전 문제입니다.
             return f"API_HTTP_ERROR_{response.status_code}: {response.text}"
 
         data = response.json()
-        
-        # Gemini 특유의 안전 필터링 등에 의한 빈 응답 처리
         candidates = data.get("candidates", [])
-        if not candidates or 'content' not in candidates[0]:
-            return "API_EMPTY_RESPONSE: 구글 AI가 답변을 생성하지 못했습니다(필터링 가능성)."
+        if not candidates:
+            return "API_EMPTY_RESPONSE: 답변 후보가 없습니다."
 
         return candidates[0]["content"]["parts"][0]["text"].strip()
 
-    except requests.exceptions.Timeout:
-        return "CONNECTION_TIMEOUT: 구글 API 서버 응답 시간이 초과되었습니다."
     except Exception as e:
         return f"SYSTEM_EXCEPTION: {str(e)}"
 
@@ -129,31 +118,23 @@ def get_recent_context(user_id: str, limit: int = 3) -> str:
         return ""
 
 def answer_question(question: str, user_id: str = "default_user") -> Dict[str, Any]:
-    # 1. 데이터 로드 및 검색
     expenses = load_expenses()
     docs = retrieve_relevant_docs(question, expenses)
-    
-    # 2. 맥락 강화
     history = get_recent_context(user_id)
     context_data = "\n\n".join([f"[{d['ref']}] {d['text']}" for d in docs])
     
-    # 3. 프롬프트 엔지니어링 (결과 품질 향상)
-    prompt = f"""당신은 개인 금융 분석가입니다. 아래 제공된 데이터와 대화 맥락을 사용하여 사용자의 질문에 친절하게 답변하세요.
+    prompt = f"""당신은 가계부 분석 도우미입니다.
+참고 데이터를 바탕으로 답변하세요.
 
 [참고 데이터]
 {context_data}
 
-[이전 대화 맥락]
+[이전 맥락]
 {history}
 
-[사용자 질문]
-{question}
+질문: {question}"""
 
-답변은 한국어로 작성하고, 근거가 되는 데이터가 있다면 언급해 주세요."""
-
-    # 4. API 호출 및 결과 반환
     answer = call_gemini(prompt)
-    
     return {
         "answer": answer,
         "references": [d["ref"] for d in docs]
