@@ -124,19 +124,11 @@ def delete_expense(expense_id: str):
 
 # main.py의 ask 함수 수정
 @app.post("/ask", response_model=AskResponse)
-async def ask(request: AskRequest, background_tasks: BackgroundTasks):
-    # user_id인 "default_user"를 함께 넘겨줘야 이전 대화를 찾아옵니다.
+async def ask(request: AskRequest): # BackgroundTasks 제거
     answer_data = answer_question(request.question, user_id="default_user")
     
-    # 2. 채팅 로그 저장 (BackgroundTasks 활용하여 응답 속도 최적화)
-    # 현재는 테스트를 위해 'default_user'로 설정하지만, 
-    # 나중에 로그인 구현 시 실제 user_id를 넘겨받으면 됩니다.
-    background_tasks.add_task(
-        save_chat_log, 
-        user_id="default_user", 
-        question=request.question, 
-        answer=answer_data["answer"]
-    )
+    # 백그라운드가 아니라 직접 실행해서 에러를 즉시 확인합니다.
+    save_chat_log(user_id="default_user", question=request.question, answer=answer_data["answer"])
     
     return AskResponse(
         answer=answer_data["answer"],
