@@ -217,23 +217,35 @@ def answer_question(question: str, user_id: str = "default_user") -> Dict[str, A
   # app/rag_engine.py
 
 def get_recent_context(user_id: str, limit: int = 3) -> str:
-    """DB에서 대화 기록 긁어오기"""
+    """DB에서 대화 기록을 안전하게 읽어오는 함수"""
     try:
+        # DB 연결 확인
         doc_ref = db.collection("chat_sessions").document(user_id)
         doc = doc_ref.get()
+        
         if not doc.exists:
+            print(f"DEBUG: {user_id}의 세션이 존재하지 않습니다.")
             return ""
         
-        messages = doc.to_dict().get("messages", [])
-        recent = messages[-limit:] 
+        # 데이터 가져오기 및 에러 방지를 위한 get() 사용
+        data = doc.to_dict()
+        messages = data.get("messages", [])
+        
+        if not messages:
+            return ""
+
+        recent = messages[-limit:] # 최근 대화만 추출
         
         context_str = "\n[이전 대화 맥락]\n"
         for msg in recent:
-            # main.py 저장 키값인 'user'와 'assistant'를 사용합니다.
-            context_str += f"사용자: {msg.get('user', '')}\nAI: {msg.get('assistant', '')}\n"
+            # Firebase 스크린샷의 키값인 'user'와 'assistant'를 정확히 사용합니다.
+            u_text = msg.get('user', '')
+            a_text = msg.get('assistant', '')
+            context_str += f"사용자: {u_text}\nAI: {a_text}\n"
+            
+        print(f"DEBUG: 맥락 불러오기 성공")
         return context_str
     except Exception as e:
-        print(f"컨텍스트 로드 에러: {e}")
+        # 에러 발생 시 서버가 죽지 않도록 빈 문자열 반환 및 로그 출력
+        print(f"DEBUG ERROR (get_recent_context): {e}")
         return ""
-
-# 중괄호 } 가 있다면 반드시 삭제하세요!
