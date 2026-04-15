@@ -11,14 +11,14 @@ from app.firebase_client import get_firestore_client
 db = get_firestore_client()
 expenses_ref = db.collection("expenses")
 
-import os
-
-# 모델명과 URL 설정 (보이지 않는 공백 방지를 위해 직접 문자열 입력)
+# 모델명은 1.5-flash로 고정 (가장 안정적)
 GENERATION_MODEL = "gemini-1.5-flash"
+
+# 주소 전체를 문자열로 직접 입력 (f-string 사용 안 함)
 GENERATE_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
 
 # API 키 가져오기
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "").strip() # strip()으로 앞뒤 공백 제거
 
 def load_expenses() -> List[Dict[str, Any]]:
     docs = expenses_ref.stream()
