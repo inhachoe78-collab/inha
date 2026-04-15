@@ -11,15 +11,14 @@ from app.firebase_client import get_firestore_client
 db = get_firestore_client()
 expenses_ref = db.collection("expenses")
 
-# Gemini 설정
-GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
-# rag_engine.py 상단 수정
-# rag_engine.py 상단 수정
-GENERATION_MODEL = "gemini-1.5-flash"
+import os
 
-# 모델 이름 앞에 'models/'가 중복되거나 빠지지 않도록 주의하세요.
-# 만약 2.5 버전이 v1beta에서 지원된다면 아래 주소가 정석입니다.
-GENERATE_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GENERATION_MODEL}:generateContent"
+# 모델명과 URL 설정 (보이지 않는 공백 방지를 위해 직접 문자열 입력)
+GENERATION_MODEL = "gemini-1.5-flash"
+GENERATE_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
+
+# API 키 가져오기
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 
 def load_expenses() -> List[Dict[str, Any]]:
     docs = expenses_ref.stream()
