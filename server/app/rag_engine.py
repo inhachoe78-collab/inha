@@ -1,22 +1,21 @@
 import re
 import time
+import os
 from collections import defaultdict
 from typing import Any, Dict, List
 
 import requests
-
 from app.firebase_client import get_firestore_client
 
+# Firestore 초기화
 db = get_firestore_client()
 expenses_ref = db.collection("expenses")
 
-GEMINI_API_KEY = __import__("os").environ.get("GEMINI_API_KEY", "")
-# rag_engine.py 상단 수정
+# Gemini 설정
+GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 GENERATION_MODEL = "gemini-1.5-flash"
-
-# v1beta 뒤에 models가 아니라 'models' 경로를 포함한 정확한 전체 주소입니다.
+# 구글 표준 엔드포인트 형식으로 수정
 GENERATE_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GENERATION_MODEL}:generateContent"
-
 
 def load_expenses() -> List[Dict[str, Any]]:
     docs = expenses_ref.stream()
@@ -29,7 +28,6 @@ def load_expenses() -> List[Dict[str, Any]]:
         })
     return expenses
 
-
 def expense_to_sentence(expense: Dict[str, Any]) -> str:
     return (
         f"{expense['date']}에 {expense['category']} 카테고리로 "
@@ -39,10 +37,8 @@ def expense_to_sentence(expense: Dict[str, Any]) -> str:
         f"메모: {expense['memo']}."
     )
 
-
 def month_of(date_str: str) -> str:
     return date_str[:7]
-
 
 def build_monthly_summary(expenses: List[Dict[str, Any]]) -> List[Dict[str, str]]:
     grouped = defaultdict(list)
@@ -60,6 +56,9 @@ def build_monthly_summary(expenses: List[Dict[str, Any]]) -> List[Dict[str, str]
         category_totals = defaultdict(int)
         for x in items:
             category_totals[x["category"]] += int(x["amount"])
+
+        if not category_totals:
+            continue
 
         top_category = max(category_totals.items(), key=lambda x: x[1])[0]
         top_amount = category_totals[top_category]
@@ -88,7 +87,6 @@ def build_monthly_summary(expenses: List[Dict[str, Any]]) -> List[Dict[str, str]
 
     return summaries
 
-
 def build_rag_documents(expenses: List[Dict[str, Any]]) -> List[Dict[str, str]]:
     docs = []
     for expense in expenses:
@@ -96,15 +94,12 @@ def build_rag_documents(expenses: List[Dict[str, Any]]) -> List[Dict[str, str]]:
             "ref": f"expense:{expense['id']}",
             "text": expense_to_sentence(expense)
         })
-
     docs.extend(build_monthly_summary(expenses))
     return docs
-
 
 def normalize_tokens(text: str) -> List[str]:
     lowered = text.lower()
     return re.findall(r"[가-힣a-zA-Z0-9]+", lowered)
-
 
 def extract_month_hint(question: str) -> str:
     m = re.search(r"([1-9]|1[0-2])월", question)
@@ -112,7 +107,6 @@ def extract_month_hint(question: str) -> str:
         month_num = int(m.group(1))
         return f"-{month_num:02d}"
     return ""
-
 
 def score_document(question: str, doc_text: str) -> int:
     q_tokens = set(normalize_tokens(question))
@@ -125,28 +119,31 @@ def score_document(question: str, doc_text: str) -> int:
 
     return score
 
-
 def retrieve_relevant_docs(question: str, expenses: List[Dict[str, Any]], top_k: int = 4) -> List[Dict[str, str]]:
     docs = build_rag_documents(expenses)
     scored = [(score_document(question, doc["text"]), doc) for doc in docs]
     scored.sort(key=lambda x: x[0], reverse=True)
     return [doc for _, doc in scored[:top_k]]
 
-
 def build_prompt(question_with_history: str, docs: List[Dict[str, str]]) -> str:
     context = "\n\n".join([f"[{doc['ref']}]\n{doc['text']}" for doc in docs])
 
     return f"""
 너는 개인 가계부 소비 분석 도우미다.
-반드시 아래 제공된 [참고 문서]와 [이전 대화 맥락]을 근거로 답변해라. # 수정됨
+반드시 아래 제공된 [참고 문서]와 [이전 대화 맥락]을 근거로 답변해라.
 문서나 대화 기록에 없는 내용은 추측하지 말고 "확인되지 않습니다."라고 답해라.
+답변은 한국어로 작성하라.
 
 [질문 및 맥락]
 {question_with_history}
 
 [참고 문서]
 {context}
-...
+
+[답변 형식]
+1. 먼저 질문에 직접 답변
+2. 필요한 경우 핵심 근거 요약
+3. 마지막에 "참고:" 아래에 사용한 ref 나열
 """.strip()
 
 def call_gemini(prompt: str) -> str:
@@ -169,57 +166,42 @@ def call_gemini(prompt: str) -> str:
     delay = 2
 
     for attempt in range(max_retries):
-        response = requests.post(
-            GENERATE_URL,
-            headers=headers,
-            json=payload,
-            timeout=120
-        )
+        try:
+            response = requests.post(
+                GENERATE_URL,
+                headers=headers,
+                json=payload,
+                timeout=120
+            )
 
-        if response.status_code == 200:
-            data = response.json()
-            candidates = data.get("candidates", [])
-            if not candidates:
-                return "응답을 생성하지 못했습니다."
+            if response.status_code == 200:
+                data = response.json()
+                candidates = data.get("candidates", [])
+                if not candidates:
+                    return "응답을 생성하지 못했습니다."
 
-            parts = candidates[0].get("content", {}).get("parts", [])
-            texts = [part.get("text", "") for part in parts if "text" in part]
-            return "\n".join(texts).strip()
+                parts = candidates[0].get("content", {}).get("parts", [])
+                texts = [part.get("text", "") for part in parts if "text" in part]
+                return "\n".join(texts).strip()
 
-        if response.status_code in (429, 500, 503) and attempt < max_retries - 1:
-            time.sleep(delay)
-            delay *= 2
-            continue
+            if response.status_code in (429, 500, 503) and attempt < max_retries - 1:
+                time.sleep(delay)
+                delay *= 2
+                continue
 
-        response.raise_for_status()
+            response.raise_for_status()
+        except Exception as e:
+            if attempt < max_retries - 1:
+                time.sleep(delay)
+                delay *= 2
+                continue
+            return f"에러 발생: {str(e)}"
 
     return "응답을 생성하지 못했습니다."
-
-
-# 수정 후 (이 코드로 덮어쓰세요)
-def answer_question(question: str, user_id: str = "default_user") -> Dict[str, Any]:
-    expenses = load_expenses()
-    docs = retrieve_relevant_docs(question, expenses, top_k=4)
-    
-    # 1. 이전 대화 맥락 가져오기
-    history_context = get_recent_context(user_id) 
-    
-    # 2. 질문에 이전 맥락을 합쳐서 프롬프트 생성
-    prompt = build_prompt(question + history_context, docs) 
-    
-    answer = call_gemini(prompt)
-
-    return {
-        "answer": answer,
-        "references": [doc["ref"] for doc in docs]
-    }
-
-  # app/rag_engine.py
 
 def get_recent_context(user_id: str, limit: int = 3) -> str:
     """DB에서 대화 기록을 안전하게 읽어오는 함수"""
     try:
-        # DB 연결 확인
         doc_ref = db.collection("chat_sessions").document(user_id)
         doc = doc_ref.get()
         
@@ -227,18 +209,16 @@ def get_recent_context(user_id: str, limit: int = 3) -> str:
             print(f"DEBUG: {user_id}의 세션이 존재하지 않습니다.")
             return ""
         
-        # 데이터 가져오기 및 에러 방지를 위한 get() 사용
         data = doc.to_dict()
         messages = data.get("messages", [])
         
         if not messages:
             return ""
 
-        recent = messages[-limit:] # 최근 대화만 추출
+        recent = messages[-limit:] 
         
         context_str = "\n[이전 대화 맥락]\n"
         for msg in recent:
-            # Firebase 스크린샷의 키값인 'user'와 'assistant'를 정확히 사용합니다.
             u_text = msg.get('user', '')
             a_text = msg.get('assistant', '')
             context_str += f"사용자: {u_text}\nAI: {a_text}\n"
@@ -246,6 +226,23 @@ def get_recent_context(user_id: str, limit: int = 3) -> str:
         print(f"DEBUG: 맥락 불러오기 성공")
         return context_str
     except Exception as e:
-        # 에러 발생 시 서버가 죽지 않도록 빈 문자열 반환 및 로그 출력
         print(f"DEBUG ERROR (get_recent_context): {e}")
         return ""
+
+def answer_question(question: str, user_id: str = "default_user") -> Dict[str, Any]:
+    expenses = load_expenses()
+    docs = retrieve_relevant_docs(question, expenses, top_k=4)
+    
+    # 1. 이전 대화 맥락 가져오기
+    history_context = get_recent_context(user_id) 
+    
+    # 2. 질문에 이전 맥락을 합쳐서 전송 (구분자 추가)
+    combined_input = f"{history_context}\n\n현재 질문: {question}"
+    prompt = build_prompt(combined_input, docs) 
+    
+    answer = call_gemini(prompt)
+
+    return {
+        "answer": answer,
+        "references": [doc["ref"] for doc in docs]
+    }
