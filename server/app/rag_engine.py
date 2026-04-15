@@ -15,7 +15,7 @@ expenses_ref = db.collection("expenses")
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 # rag_engine.py 상단 수정
 # rag_engine.py 상단 수정
-GENERATION_MODEL = "gemini-2.5-flash"
+GENERATION_MODEL = "gemini-1.5-flash"
 
 # 모델 이름 앞에 'models/'가 중복되거나 빠지지 않도록 주의하세요.
 # 만약 2.5 버전이 v1beta에서 지원된다면 아래 주소가 정석입니다.
