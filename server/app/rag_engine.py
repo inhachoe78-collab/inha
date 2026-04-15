@@ -14,10 +14,11 @@ expenses_ref = db.collection("expenses")
 # Gemini 설정
 GEMINI_API_KEY = os.environ.get("GEMINI_API_KEY", "")
 # rag_engine.py 상단 수정
-GENERATION_MODEL = "gemini-1.5-flash"
+# rag_engine.py 상단 수정
+GENERATION_MODEL = "gemini-2.5-flash"
 
-# 이 주소 형식이 가장 표준적인 형태입니다. 
-# v1beta/models/{모델명}:generateContent 구조를 정확히 지켜야 합니다.
+# 모델 이름 앞에 'models/'가 중복되거나 빠지지 않도록 주의하세요.
+# 만약 2.5 버전이 v1beta에서 지원된다면 아래 주소가 정석입니다.
 GENERATE_URL = f"https://generativelanguage.googleapis.com/v1beta/models/{GENERATION_MODEL}:generateContent"
 
 def load_expenses() -> List[Dict[str, Any]]:
