@@ -217,7 +217,7 @@ def answer_question(question: str, user_id: str = "default_user") -> Dict[str, A
   # app/rag_engine.py
 
 def get_recent_context(user_id: str, limit: int = 3) -> str:
-    """서버 담당자 업무: DB에서 대화 기록 긁어오기"""
+    """DB에서 대화 기록 긁어오기"""
     try:
         doc_ref = db.collection("chat_sessions").document(user_id)
         doc = doc_ref.get()
@@ -225,13 +225,15 @@ def get_recent_context(user_id: str, limit: int = 3) -> str:
             return ""
         
         messages = doc.to_dict().get("messages", [])
-        recent = messages[-limit:] # 최근 n개 추출
+        recent = messages[-limit:] 
         
-        # RAG 담당자가 원하는 양식대로 조립 (이 양식은 RAG 담당자에게 물어보세요)
         context_str = "\n[이전 대화 맥락]\n"
         for msg in recent:
-            context_str += f"사용자: {msg['user']}\nAI: {msg['assistant']}\n"
+            # main.py 저장 키값인 'user'와 'assistant'를 사용합니다.
+            context_str += f"사용자: {msg.get('user', '')}\nAI: {msg.get('assistant', '')}\n"
         return context_str
     except Exception as e:
         print(f"컨텍스트 로드 에러: {e}")
         return ""
+
+# 중괄호 } 가 있다면 반드시 삭제하세요!
